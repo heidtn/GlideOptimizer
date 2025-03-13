@@ -10,11 +10,11 @@ class Visualizer:
     def __init__(self, map: map_layers.Map, particles: ParticleManager):
         self.map = map
         self.particles = particles
-        #self.plotter = pv.Plotter(notebook=False, off_screen=True)
-        self.plotter = pv.Plotter()
-        plot_elevation_with_pyvista(self.plotter, map)
+        self.plotter = pv.Plotter(notebook=False, off_screen=True)
+        #self.plotter = pv.Plotter()
+        #plot_elevation_with_pyvista(self.plotter, map)
         self.particle_points = None
-        #self.plotter.open_gif("test.gif")
+        self.plotter.open_gif("test.gif")
 
     def create_points(self):
         self.particle_points = pv.PolyData(self.particles.droplet_positions)
@@ -30,11 +30,36 @@ class Visualizer:
                 return
         self.particle_points.points = self.particles.droplet_positions
         self.plotter.update_coordinates(self.particles.droplet_positions, mesh=self.particle_points, render=True)
-        #self.plotter.write_frame()
-        self.plotter.render()
+        self.plotter.write_frame()
+        #self.plotter.render()
 
     def close(self):
         self.plotter.close()
+
+class ParticlePlotter:
+    def __init__(self, map: map_layers.Map, particles: ParticleManager):
+        self.map = map
+        self.particles = particles
+        self.plotter = pv.Plotter()
+        plot_elevation_with_pyvista(self.plotter, map)
+        self.particle_points = None
+        self.particle_paths: list = None
+
+    def update(self):
+        if self.particle_paths is None:
+            if self.particles.droplet_positions:
+                self.particle_paths = [[np.array(drop)] for drop in self.particles.droplet_positions]
+            else:
+                return
+        for i, particle_pos in enumerate(self.particles.droplet_positions):
+            if self.particles.droplet_active[i]:
+                self.particle_paths[i].append(np.array(particle_pos))
+
+    def close(self):
+        for i in range(len(self.particle_paths)):
+            spline = pv.Spline(np.array(self.particle_paths[i]))
+            self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3)
+        self.plotter.show()
         
 
 
