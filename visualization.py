@@ -3,7 +3,7 @@ import pyvista as pv
 from rasterio.transform import from_origin
 import map_layers
 from particles import ParticleManager
-
+from scipy.interpolate import griddata
 from sim_params import default_params
 
 class Visualizer:
@@ -41,13 +41,12 @@ class ParticlePlotter:
         self.map = map
         self.particles = particles
         self.plotter = pv.Plotter()
-        plot_elevation_with_pyvista(self.plotter, map)
         self.particle_points = None
         self.particle_paths: list = None
 
     def update(self):
         if self.particle_paths is None:
-            if self.particles.droplet_positions:
+            if self.particles.droplet_positions.shape[0] > 0:
                 self.particle_paths = [[np.array(drop)] for drop in self.particles.droplet_positions]
             else:
                 return
@@ -56,20 +55,21 @@ class ParticlePlotter:
                 self.particle_paths[i].append(np.array(particle_pos))
 
     def close(self):
-        for i in range(len(self.particle_paths)):
+        plot_elevation_with_pyvista(self.plotter, self.map)
+        from tqdm import tqdm
+        for i in tqdm(range(len(self.particle_paths))):
             spline = pv.Spline(np.array(self.particle_paths[i]))
             self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3)
         self.plotter.show()
         
 
-
 def plot_elevation_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     nrows, ncols = map.elevation_array.shape
     # For an affine transform from_origin(west, north, resolution, resolution),
     # the x coordinates (columns) are:
-    x_coords = np.arange(ncols) * map.x_res
+    x_coords = np.arange(ncols) * map.dx
     # and the y coordinates (rows) are (note: y decreases as row index increases)
-    y_coords = np.arange(nrows) * map.y_res
+    y_coords = np.arange(nrows) * map.dy
 
     # Create a meshgrid of x and y coordinates.
     xx, yy = np.meshgrid(x_coords, y_coords)
@@ -77,9 +77,27 @@ def plot_elevation_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     zz = map.elevation_array
 
     # Create a structured grid for PyVista.
-    grid = pv.StructuredGrid(xx, yy, zz)
 
-    plotter.add_mesh(grid, cmap="terrain", show_scalar_bar=True)
+    drop_nrows, drop_ncols = map.droplet_array.shape
+    drop_x_coords = np.arange(drop_ncols) * (map.x_size / drop_ncols)
+    drop_y_coords = np.arange(drop_nrows) * (map.y_size / drop_nrows)
+    drop_xx, drop_yy = np.meshgrid(drop_x_coords, drop_y_coords)
+    drop_zz = map.droplet_array
+    droplets = pv.StructuredGrid(drop_xx, drop_yy, drop_zz)
+
+    points_source = np.column_stack((xx.ravel(), yy.ravel()))
+    values_source = map.elevation_array.ravel()
+    points_target = np.column_stack((drop_xx.ravel(), drop_yy.ravel()))
+    elev_data_highres = griddata(points_source, values_source, points_target, method='cubic')
+
+    # Reshape the interpolated data back to a 2D array.
+    elev_data_highres = elev_data_highres.reshape(drop_nrows, drop_ncols)
+
+    elevation_grid = pv.StructuredGrid(xx, yy, map.elevation_array)
+    #elevation_grid.cell_data["collision"] = droplets
+
+    plotter.add_mesh(elevation_grid, cmap="terrain", show_scalar_bar=True)
+    #plotter.add_mesh(droplets, cmap="terrain", show_scalar_bar=True)
 
 if __name__ == "__main__":
     map = map_layers.Map(default_params)
