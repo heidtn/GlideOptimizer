@@ -39,8 +39,9 @@ class Visualizer:
 class ParticlePlotter:
     def __init__(self, map: map_layers.Map, particles: ParticleManager):
         self.map = map
-        self.particles = particles
-        self.plotter = pv.Plotter()
+        self.particles = particles.pc
+        self.plotter = pv.Plotter(shape=(2, 1))
+        self.plotter.subplot(0, 0)
         self.particle_points = None
         self.particle_paths: list = None
 
@@ -60,44 +61,32 @@ class ParticlePlotter:
         for i in tqdm(range(len(self.particle_paths))):
             spline = pv.Spline(np.array(self.particle_paths[i]))
             self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3)
+
+        self.plotter.subplot(1, 0)
+        plot_droplets_with_pyvista(self.plotter, self.map)
         self.plotter.show()
         
 
 def plot_elevation_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     nrows, ncols = map.elevation_array.shape
-    # For an affine transform from_origin(west, north, resolution, resolution),
-    # the x coordinates (columns) are:
     x_coords = np.arange(ncols) * map.dx
-    # and the y coordinates (rows) are (note: y decreases as row index increases)
     y_coords = np.arange(nrows) * map.dy
 
-    # Create a meshgrid of x and y coordinates.
     xx, yy = np.meshgrid(x_coords, y_coords)
-    # z values are your elevation data.
     zz = map.elevation_array
 
-    # Create a structured grid for PyVista.
+    elevation_grid = pv.StructuredGrid(xx, yy, map.elevation_array)
+    plotter.add_mesh(elevation_grid, cmap="terrain", show_scalar_bar=True)
 
+def plot_droplets_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     drop_nrows, drop_ncols = map.droplet_array.shape
     drop_x_coords = np.arange(drop_ncols) * (map.x_size / drop_ncols)
     drop_y_coords = np.arange(drop_nrows) * (map.y_size / drop_nrows)
     drop_xx, drop_yy = np.meshgrid(drop_x_coords, drop_y_coords)
-    drop_zz = map.droplet_array
+    drop_zz = map.droplet_array / 100.0
     droplets = pv.StructuredGrid(drop_xx, drop_yy, drop_zz)
+    plotter.add_mesh(droplets, show_scalar_bar=True)
 
-    points_source = np.column_stack((xx.ravel(), yy.ravel()))
-    values_source = map.elevation_array.ravel()
-    points_target = np.column_stack((drop_xx.ravel(), drop_yy.ravel()))
-    elev_data_highres = griddata(points_source, values_source, points_target, method='cubic')
-
-    # Reshape the interpolated data back to a 2D array.
-    elev_data_highres = elev_data_highres.reshape(drop_nrows, drop_ncols)
-
-    elevation_grid = pv.StructuredGrid(xx, yy, map.elevation_array)
-    #elevation_grid.cell_data["collision"] = droplets
-
-    plotter.add_mesh(elevation_grid, cmap="terrain", show_scalar_bar=True)
-    #plotter.add_mesh(droplets, cmap="terrain", show_scalar_bar=True)
 
 if __name__ == "__main__":
     map = map_layers.Map(default_params)
