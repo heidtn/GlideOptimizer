@@ -52,7 +52,9 @@ class ParticlePlotter:
             else:
                 return
         for i, particle_pos in enumerate(self.particles.droplet_positions):
-            if self.particles.droplet_active[i]:
+            if i >= len(self.particle_paths):
+                self.particle_paths.append([np.array(particle_pos)])
+            elif self.particles.droplet_active[i]:
                 self.particle_paths[i].append(np.array(particle_pos))
 
     def close(self):

@@ -59,10 +59,10 @@ class Map:
         self.droplet_array = 0
         
 
-
+# TODO(Heidt) find a more elegant solution than passing the dem path string
 def generate_elevation_array(
     params: SimParams,
-    dem_path: str = "/home/heidt/Projects/GlideOptimizer/data/temp_dem.tif",
+    dem_path: str = "/home/nathan/Projects/GlideOptimizer/data/temp_dem.tif",
 ) -> tuple[np.ndarray, float]:
     """
     Generate a numpy array of elevation data for the specified geographic bounds
@@ -79,7 +79,7 @@ def generate_elevation_array(
     bounds = (params.lon_min, params.lat_min, params.lon_max, params.lat_max)
     # Using SRTM1 which typically provides ~30m resolution data.
     resolution = 30.0
-    elevation.clip(bounds=bounds, output=dem_path, product="SRTM1")
+    elevation.clip(bounds=bounds, output=dem_path, product="SRTM3")
     with rasterio.open(dem_path) as src:
         # Determine a target CRS using UTM based on the center of the bounding box.
         dem_data = src.read(1).astype("float64")

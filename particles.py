@@ -46,6 +46,9 @@ class ParticleManager:
     def add_droplet(self, initial_position: np.ndarray, initial_velocity: np.ndarray, initial_size: np.ndarray):
         self.pc.add_droplet(initial_position, initial_velocity, initial_size)
 
+    def add_collection(self, new_particles: ParticleCollection):
+        self.pc.add_collection(new_particles)
+
     def step(self, delta_t: float):
         # TODO(Heidt) look at the paper that details the brownian motion
         # TODO(Heidt) add in droplet evaporation term
