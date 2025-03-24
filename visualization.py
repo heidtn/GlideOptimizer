@@ -37,32 +37,34 @@ class Visualizer:
         self.plotter.close()
 
 class ParticlePlotter:
-    def __init__(self, map: map_layers.Map, particles: ParticleManager):
+    def __init__(self, map: map_layers.Map, particles: ParticleManager, interval=5):
         self.map = map
         self.particles = particles.pc
         self.plotter = pv.Plotter(shape=(2, 1))
         self.plotter.subplot(0, 0)
         self.particle_points = None
-        self.particle_paths: list = None
+        self.particle_paths: list = []
+        self.particle_velocities: list = []
+        self.interval=interval
 
     def update(self):
-        if self.particle_paths is None:
-            if self.particles.droplet_positions.shape[0] > 0:
-                self.particle_paths = [[np.array(drop)] for drop in self.particles.droplet_positions]
-            else:
-                return
         for i, particle_pos in enumerate(self.particles.droplet_positions):
-            if i >= len(self.particle_paths):
-                self.particle_paths.append([np.array(particle_pos)])
-            elif self.particles.droplet_active[i]:
-                self.particle_paths[i].append(np.array(particle_pos))
+            if i % self.interval == 0:
+                list_idx = int(i / self.interval)
+                if list_idx >= len(self.particle_paths):
+                    self.particle_paths.append([np.array(particle_pos)])
+                    self.particle_velocities.append([np.array(self.particles.droplet_velocities[i])])
+                elif self.particles.droplet_active[i]:
+                    self.particle_paths[list_idx].append(np.array(particle_pos))
+                    self.particle_velocities[list_idx].append(np.array(self.particles.droplet_velocities[i]))
 
     def close(self):
         plot_elevation_with_pyvista(self.plotter, self.map)
         from tqdm import tqdm
         for i in tqdm(range(len(self.particle_paths))):
             spline = pv.Spline(np.array(self.particle_paths[i]))
-            self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3)
+            spline["velocities"] = np.array(self.particle_velocities[i])
+            self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
 
         self.plotter.subplot(1, 0)
         plot_droplets_with_pyvista(self.plotter, self.map)
@@ -77,17 +79,17 @@ def plot_elevation_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     xx, yy = np.meshgrid(x_coords, y_coords)
     zz = map.elevation_array
 
-    elevation_grid = pv.StructuredGrid(xx, yy, map.elevation_array)
-    plotter.add_mesh(elevation_grid, cmap="terrain", show_scalar_bar=True)
+    elevation_grid = pv.StructuredGrid(xx, yy, map.elevation_array).elevation()
+    plotter.add_mesh(elevation_grid, cmap="terrain", show_scalar_bar=True, scalar_bar_args={'title': 'Altitude'})
 
 def plot_droplets_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
     drop_nrows, drop_ncols = map.droplet_array.shape
     drop_x_coords = np.arange(drop_ncols) * (map.x_size / drop_ncols)
     drop_y_coords = np.arange(drop_nrows) * (map.y_size / drop_nrows)
     drop_xx, drop_yy = np.meshgrid(drop_x_coords, drop_y_coords)
-    drop_zz = map.droplet_array / 100.0
-    droplets = pv.StructuredGrid(drop_xx, drop_yy, drop_zz)
-    plotter.add_mesh(droplets, show_scalar_bar=True)
+    drop_zz = map.droplet_array 
+    droplets = pv.StructuredGrid(drop_xx, drop_yy, drop_zz).elevation()
+    plotter.add_mesh(droplets, show_scalar_bar=True, scalar_bar_args={'title': 'Propogule Count'})
 
 
 if __name__ == "__main__":

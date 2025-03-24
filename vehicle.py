@@ -30,7 +30,7 @@ class LinearDrone:
         distances = np.linalg.norm(np.diff(self.trajectory, axis=0), axis=1)
         distance_list = np.concatenate(([0], np.cumsum(distances)))
         self.total_distance = distance_list[-1]
-        self.traj_interp = interpolate.interp1d(distance_list, self.trajectory, axis=0, kind="linear")
+        self.traj_interp = interpolate.interp1d(distance_list, self.trajectory, axis=0, kind="cubic")
 
     def _move_drone(self, dt: float):
         self.current_distance += self.speed * dt 

@@ -70,7 +70,9 @@ class ParticleManager:
         
     def check_droplet_collision(self, map: Map):
         for i, drop in enumerate(self.pc.droplet_positions):
-            if drop[2] < map.get_elevation_at(drop[0], drop[1]):
-                map.add_droplet_at(drop[0], drop[1])
-                self.pc.droplet_active[i] = 0
+            if self.pc.droplet_active[i]:
+                elev = map.get_elevation_at(drop[0], drop[1])
+                if elev is None or drop[2] < elev:
+                    map.add_droplet_at(drop[0], drop[1])
+                    self.pc.droplet_active[i] = 0
 

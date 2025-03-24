@@ -48,7 +48,10 @@ class Map:
         x_idx = int((x / self.x_size) * self.elevation_array.shape[0])
         y_idx = int((y / self.y_size) * self.elevation_array.shape[1])
         #return self.grid(np.array((y, x)))
-        return self.elevation_array[y_idx, x_idx]
+        try:
+            return self.elevation_array[y_idx, x_idx]
+        except IndexError:
+            return None
     
     def add_droplet_at(self, x, y):
         x_idx = int((x / self.x_size) * self.droplet_array.shape[0])

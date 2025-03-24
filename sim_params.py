@@ -21,5 +21,5 @@ default_params = SimParams(
     lon_max=147.7210,
     wind_speed=np.array([1.0, 0.0, 0.0]),
     wind_deviation=0.1,
-    map_droplet_resolution=1.0,
+    map_droplet_resolution=50.0,
 )
