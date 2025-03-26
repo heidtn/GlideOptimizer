@@ -6,19 +6,21 @@ from vehicle import ConeSprayer, LinearDrone, iDrone
 from sim_params import default_params
 
 import numpy as np
+#np.seterr(all='raise')
 
 class Simulator:
     def __init__(self, map: Map, particles: ParticleManager, params: SimParams, vehicle: iDrone):
         self.map = map
         self.params = params
         self.particle_manager = particles
-        self.visualizer = ParticlePlotter(self.map, self.particle_manager)
         self.drone = vehicle
 
     def run(self):
-        RUNTIME = 60.0*10.0
-        TIMESTEP = 0.1
-        UPDATE_STEPS = 10
+        RUNTIME = 60.0*3.0
+        TIMESTEP = 0.003
+        UPDATE_STEPS = int(1/TIMESTEP)
+
+        self.visualizer = ParticlePlotter(self.map, self.particle_manager)
 
         from tqdm import tqdm
         for i in tqdm(range(int(RUNTIME / TIMESTEP))):
@@ -30,7 +32,8 @@ class Simulator:
                 self.visualizer.update()
 
         i = 0
-        while np.any(self.particle_manager.pc.droplet_active):
+        #while np.any(self.particle_manager.pc.droplet_active):
+        for i in tqdm(range(15000)):
             self.particle_manager.step(TIMESTEP)
             self.particle_manager.check_droplet_collision(self.map)
             if i % UPDATE_STEPS == 0:
@@ -57,9 +60,9 @@ def create_rectilinear_grid(start, length, spacing, count):
 if __name__ == "__main__":
     map = Map(default_params)
     particles = ParticleManager(default_params)
-    sprayer = ConeSprayer(40)
+    sprayer = ConeSprayer(90)
 
-    trajectory = create_rectilinear_grid(np.array([200., 200., 700.]), 400., 200., 8)
+    trajectory = create_rectilinear_grid(np.array([200., 400., 500.]), 400., 200., 8)
     vehicle = LinearDrone(trajectory, 10.0, sprayer)
     sim = Simulator(map, particles, default_params, vehicle)
     sim.run()

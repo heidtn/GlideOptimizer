@@ -10,7 +10,7 @@ spray evolution"
 """
 
 AIR_DENSITY = 1.293 # kg/m^3
-WATER_DENSITY = 977 # kg/m^3
+DROPLET_DENSITY = 977 # kg/m^3
 # TODO(Heidt) this seems pretty dependent on temperature/humidity, might have to add that in
 AIR_VISCOSITY = 3.178e-5 # N*s/m^2
 LAMBDA = 0.01
@@ -19,8 +19,8 @@ class ParticleCollection:
     def __init__(self):
         self.droplet_positions = np.empty((0, 3), np.float64)
         self.droplet_velocities = np.empty((0, 3), np.float64)
-        self.droplet_sizes = np.empty((0,1), np.float64)
-        self.droplet_active = np.empty((0,1), np.int8)
+        self.droplet_sizes = np.empty((0, 1), np.float64)
+        self.droplet_active = np.empty((0, 1), np.int8)
         self.droplet_noise = np.empty((0, 3), np.float64)
 
     def add_droplet(self, initial_position: np.ndarray, initial_velocity: np.ndarray, initial_size: np.ndarray):
@@ -50,23 +50,34 @@ class ParticleManager:
         self.pc.add_collection(new_particles)
 
     def step(self, delta_t: float):
+        if self.pc.droplet_sizes.shape[0] == 0:
+            return
+
         # TODO(Heidt) look at the paper that details the brownian motion
         # TODO(Heidt) add in droplet evaporation term
         # TODO(Heidt) consider moving to leapfrog integration
+        # TODO(Heidt) the paper implies we don't use absolute value of particle, need to confirm
+        # TODO(Heidt) divide by 0 when velocity diff is 0
+
         num_droplets = len(self.pc.droplet_positions)
         velocity_fluctuation = np.random.normal(0, scale=self.wind_deviation, size=(num_droplets, 3))
         self.pc.droplet_noise += -self.pc.droplet_noise*LAMBDA + velocity_fluctuation
         fluid_vel = self.wind_speed + self.pc.droplet_noise
         velocity_diff = fluid_vel - self.pc.droplet_velocities
-        velocity_diff_abs = np.abs(velocity_diff)
 
-        # TODO(Heidt) the paper implies we don't use absolute value of particle, need to confirm
-        Re = AIR_DENSITY * self.pc.droplet_sizes * velocity_diff_abs / AIR_VISCOSITY
-        Cd = np.where((Re < 1000), 24 * (1 + 0.15 * Re**0.687) / Re, 0.44) 
-        air_accel = 3/4 * AIR_DENSITY * Cd * (velocity_diff) * velocity_diff_abs
-        grav_accel = np.array([0, 0, -9.8]) * (1 - AIR_DENSITY/WATER_DENSITY)
-        self.pc.droplet_positions += self.pc.droplet_velocities * delta_t * self.pc.droplet_active
-        self.pc.droplet_velocities += ((air_accel + grav_accel) * delta_t)
+        # Magnitude of relative velocity for each particle
+        speed = np.linalg.norm(velocity_diff, axis=1, keepdims=True)
+
+        Re = (AIR_DENSITY * self.pc.droplet_sizes * speed) / AIR_VISCOSITY
+        Cd = np.where((Re < 1000), (24 * (1 + 0.15 * Re**0.687)) / Re, 0.44) 
+
+        # Drag acceleration
+        drag_accel = 0.75 * Cd * AIR_DENSITY * speed * velocity_diff / (DROPLET_DENSITY * self.pc.droplet_sizes)
+        grav_accel = np.array([0, 0, -9.8]) * (1 - AIR_DENSITY/DROPLET_DENSITY)
+
+        self.pc.droplet_velocities += (grav_accel * delta_t) + (drag_accel * delta_t)
+        self.pc.droplet_positions += self.pc.droplet_active * self.pc.droplet_velocities * delta_t
+
         
     def check_droplet_collision(self, map: Map):
         for i, drop in enumerate(self.pc.droplet_positions):

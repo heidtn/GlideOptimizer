@@ -57,7 +57,7 @@ class ConeSprayer(iSprayer):
     PARTICLE_SPEED_RANGE = 2.5 # m/s
     FAN_ANGLE_RANGE = 130 # degrees
     PROPAGULE_VARIANCE = 1 # variance in propagules/second
-    PROPAGULE_MIN_SIZE = 100.0
+    PROPAGULE_MIN_SIZE = 100.0e-6
     def __init__(self, flow_rate: float):
         """
         Args:
@@ -69,7 +69,13 @@ class ConeSprayer(iSprayer):
         # TODO(Heidt) if dt is sufficiently small, we'll end up with 0 propagules/timestep
         mean_propagules = self.flow_rate * dt
         var_props = self.PROPAGULE_VARIANCE * dt
-        num_propagules = int(np.max([0, np.random.normal(mean_propagules, var_props, 1)[0]]))
+
+        # If dt is sufficiently small a normal distribution will almost always result in 
+        # 0 propogules, need to use poisson process to sample for very small timesteps
+        lambda_step = np.random.normal(loc=mean_propagules, scale=np.sqrt(var_props))
+        lambda_step = max(lambda_step, 0)
+        num_propagules = np.random.poisson(lambda_step)
+
         collection = ParticleCollection()
 
         for i in range(num_propagules):

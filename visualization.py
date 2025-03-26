@@ -63,8 +63,8 @@ class ParticlePlotter:
         from tqdm import tqdm
         for i in tqdm(range(len(self.particle_paths))):
             spline = pv.Spline(np.array(self.particle_paths[i]))
-            spline["velocities"] = np.array(self.particle_velocities[i])
-            self.plotter.add_mesh(spline, scalars='arc_length', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
+            spline["velocities"] = np.linalg.norm(self.particle_velocities[i], axis=1)
+            self.plotter.add_mesh(spline, scalars='velocities', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
 
         self.plotter.subplot(1, 0)
         plot_droplets_with_pyvista(self.plotter, self.map)

@@ -47,7 +47,6 @@ class Map:
         nrows, ncols = self.elevation_array.shape
         x_idx = int((x / self.x_size) * self.elevation_array.shape[0])
         y_idx = int((y / self.y_size) * self.elevation_array.shape[1])
-        #return self.grid(np.array((y, x)))
         try:
             return self.elevation_array[y_idx, x_idx]
         except IndexError:
