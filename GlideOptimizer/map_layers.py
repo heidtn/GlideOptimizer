@@ -4,7 +4,7 @@ import rasterio
 from rasterio.warp import reproject, Resampling
 from rasterio.transform import from_origin
 import elevation
-from sim_params import SimParams
+from GlideOptimizer.sim_params import SimParams
 from scipy.interpolate import RegularGridInterpolator
 
 """
@@ -12,17 +12,20 @@ from scipy.interpolate import RegularGridInterpolator
 TODOs: 
 - need to validate indexing on the elevation array between lat/lon and x/y, essentially mapping from x/y and lat/lon
 - RegularGridInterpolator is stupid slow for some reason, went fom 120 it/s to 20 it/s, probably can make this faster
-
+- move to an abstract map class
+- make the map setup DRY
 """
+
 
 class FlatMap:
     """
     Just a flat map with some size
     """
     def __init__(self, params: SimParams, x_size, y_size):
-        x = np.linspace(0, x_size, int(x_size/params.map_droplet_resolution))
-        y = np.linspace(0, y_size, int(y_size/params.map_droplet_resolution))
+        x = int(x_size/params.map_droplet_resolution)
+        y = int(y_size/params.map_droplet_resolution)
         self.elevation_array = np.zeros((x, y))
+        self.params = params
 
         self.x_size = x_size
         self.y_size = y_size
@@ -51,6 +54,17 @@ class FlatMap:
     def clear_droplet_array(self):
         self.droplet_array = 0
 
+    def get_droplet_variances(self):
+        return _calculate_droplet_variance(self, self.params)
+    
+    def get_droplet_cep(self, percent):
+        return _calculate_droplet_cep(self, self.params, percent)
+    
+    def get_droplet_histogram(self, bins=30):
+        distances = _get_droplet_distances(self, self.params)
+        histogram_data = np.histogram(distances, bins)
+        return histogram_data
+
 
 class Map:
     """
@@ -69,8 +83,8 @@ class Map:
         nrows, ncols = self.elevation_array.shape
         x_coords = np.arange(ncols) * self.dx
         y_coords = np.arange(nrows) * self.dy
-        xx, yy = np.meshgrid(x_coords, y_coords)
-        self.grid = RegularGridInterpolator((y_coords, x_coords), self.elevation_array)
+        #xx, yy = np.meshgrid(x_coords, y_coords)
+        #self.grid = RegularGridInterpolator((x_coords, y_coords), self.elevation_array)
 
         droplet_array_x = int(round(self.x_size / params.map_droplet_resolution))
         droplet_array_y = int(round(self.y_size / params.map_droplet_resolution))
@@ -95,6 +109,7 @@ class Map:
 
     def clear_droplet_array(self):
         self.droplet_array = 0
+
         
 
 # TODO(Heidt) find a more elegant solution than passing the dem path string
@@ -132,10 +147,39 @@ def get_elevation_data(params: SimParams):
     arr = generate_elevation_array(params)
     return arr
 
+def _get_droplet_distances(map: FlatMap, params: SimParams):
+    drops = map.droplet_array
+    distance_array = []
+    for x in range(drops.shape[0]):
+        for y in range(drops.shape[1]):
+            x_position = x * params.map_droplet_resolution - map.x_size/2.0
+            y_position = y * params.map_droplet_resolution - map.y_size/2.0
+            for i in range(int(drops[x, y])):
+                distance_array.append((x_position, y_position))
+    mean = np.mean(np.array(distance_array))
+    distances = np.linalg.norm(distance_array -  mean, axis=1)
+    return distances
+
+def _calculate_droplet_variance(map: FlatMap, params: SimParams):
+    """ 
+    calculates variance of droplets from the center of the map in both axes
+
+    TODO(Heidt) might want to do covariance instead if we ever care
+    """
+    distances = _get_droplet_distances(map, params)
+    return np.var(distances)
+
+def _calculate_droplet_cep(map: FlatMap, params: SimParams, percent):
+    """ 
+    calculates circular error probably
+    """
+    distances = _get_droplet_distances(map, params)
+    return np.percentile(distances, percent)
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    from sim_params import default_params
-    arr = get_elevation_data(default_params)
+    from sim_params import test_params
+    arr = get_elevation_data(test_params)
     plt.imshow(arr)
     plt.show()

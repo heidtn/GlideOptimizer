@@ -1,6 +1,6 @@
 import numpy as np
-from sim_params import SimParams
-from map_layers import Map
+from GlideOptimizer.sim_params import SimParams
+from GlideOptimizer.map_layers import Map
 
 """
     droplet models are from the following papers:
@@ -13,7 +13,7 @@ AIR_DENSITY = 1.293 # kg/m^3
 DROPLET_DENSITY = 977 # kg/m^3
 # TODO(Heidt) this seems pretty dependent on temperature/humidity, might have to add that in
 AIR_VISCOSITY = 3.178e-5 # N*s/m^2
-LAMBDA = 0.01
+T_l = 0.5
 
 class ParticleCollection:
     def __init__(self):
@@ -60,8 +60,10 @@ class ParticleManager:
         # TODO(Heidt) divide by 0 when velocity diff is 0
 
         num_droplets = len(self.pc.droplet_positions)
-        velocity_fluctuation = np.random.normal(0, scale=self.wind_deviation, size=(num_droplets, 3))
-        self.pc.droplet_noise += -self.pc.droplet_noise*LAMBDA + velocity_fluctuation
+        velocity_fluctuation = np.random.normal(0, scale=np.sqrt(delta_t), size=(num_droplets, 3))
+        R_L = np.exp(-delta_t / T_l)
+
+        self.pc.droplet_noise = self.pc.droplet_noise * R_L + self.wind_deviation / np.sqrt(delta_t) * np.sqrt(1 - R_L**2.0) * velocity_fluctuation 
         fluid_vel = self.wind_speed + self.pc.droplet_noise
         velocity_diff = fluid_vel - self.pc.droplet_velocities
 
@@ -86,4 +88,14 @@ class ParticleManager:
                 if elev is None or drop[2] < elev:
                     map.add_droplet_at(drop[0], drop[1])
                     self.pc.droplet_active[i] = 0
+
+    def get_completion_ratio(self) -> tuple[int, int]:
+        num_drops = self.pc.droplet_active.size
+
+        return (num_drops - np.count_nonzero(self.pc.droplet_active), num_drops)
+    
+    def particles_done(self) -> bool:
+        not_done = np.count_nonzero(self.pc.droplet_active)
+        done = self.pc.droplet_active.size - not_done
+        return self.pc.droplet_active.size ==  done
 

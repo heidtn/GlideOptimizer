@@ -1,9 +1,9 @@
 import numpy as np
-from particles import ParticleCollection
+from GlideOptimizer.particles import ParticleCollection
 from abc import ABC, abstractmethod
 from scipy import interpolate
-from particles import ParticleCollection
-from sim_params import SprayerParticleParams
+from GlideOptimizer.particles import ParticleCollection
+from GlideOptimizer.sim_params import SprayerParticleParams
 
 
 class iSprayer(ABC):
@@ -17,16 +17,31 @@ class iDrone(ABC):
     def step(self, dt: float) -> ParticleCollection:
         pass
 
+    def is_done(self) -> bool:
+        pass
+
+    def completion_ratio(self) -> tuple[float, float]:
+        pass
+
 class StationarySprayer(iDrone):
     """
     Doesn't move
     """
-    def __init__(self, position: np.array, sprayer: iSprayer):
+    def __init__(self, position: np.array, sprayer: iSprayer, runtime: float):
         self.position = position
         self.sprayer = sprayer
+        self.run_time = runtime
+        self.cur_time = 0.
 
     def step(self, dt: float) -> ParticleCollection:
+        self.cur_time += dt
         return self.sprayer.get_particles(dt, self.position)
+    
+    def is_done(self):
+        return self.cur_time > self.run_time
+    
+    def completion_ratio(self) -> tuple[float, float]:
+        return (self.cur_time, self.run_time)
 
 class LinearDrone(iDrone):
     """
@@ -42,16 +57,24 @@ class LinearDrone(iDrone):
         distance_list = np.concatenate(([0], np.cumsum(distances)))
         self.total_distance = distance_list[-1]
         self.traj_interp = interpolate.interp1d(distance_list, self.trajectory, axis=0, kind="cubic")
+        self.done = False
 
     def _move_drone(self, dt: float):
         self.current_distance += self.speed * dt 
         if self.current_distance > self.total_distance:
             self.current_distance = self.total_distance
+            self.done = True
         self.current_position = self.traj_interp(self.current_distance)
 
     def step(self, dt: float) -> ParticleCollection:
         self._move_drone(dt)
         return self.sprayer.get_particles(dt, self.current_position)
+    
+    def is_done(self):
+        return self.done
+    
+    def completion_ratio(self):
+        return (self.current_distance, self.total_distance)
         
 
 class ConeSprayer(iSprayer):

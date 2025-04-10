@@ -1,10 +1,10 @@
 import numpy as np
 import pyvista as pv
 from rasterio.transform import from_origin
-import map_layers
-from particles import ParticleManager
+from GlideOptimizer import map_layers
+from GlideOptimizer.particles import ParticleManager
 from scipy.interpolate import griddata
-from sim_params import default_params
+from GlideOptimizer.sim_params import test_params
 
 class Visualizer:
     def __init__(self, map: map_layers.Map, particles: ParticleManager):
@@ -62,9 +62,16 @@ class ParticlePlotter:
         plot_elevation_with_pyvista(self.plotter, self.map)
         from tqdm import tqdm
         for i in tqdm(range(len(self.particle_paths))):
-            spline = pv.Spline(np.array(self.particle_paths[i]))
-            spline["velocities"] = np.linalg.norm(self.particle_velocities[i], axis=1)
-            self.plotter.add_mesh(spline, scalars='velocities', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
+            path = np.array(self.particle_paths[i])
+            velocities = np.linalg.norm(self.particle_velocities[i], axis=1)
+            if velocities.size == 2:
+                line = pv.Line(path[0], path[1])
+                line["velocities"] = velocities
+                self.plotter.add_mesh(line, scalars='velocities', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
+            elif velocities.size > 2:
+                spline = pv.Spline(path)
+                spline["velocities"] = velocities
+                self.plotter.add_mesh(spline, scalars='velocities', render_lines_as_tubes=False, line_width=3, scalar_bar_args={'title': 'Velocity'})
 
         self.plotter.subplot(1, 0)
         plot_droplets_with_pyvista(self.plotter, self.map)
@@ -93,7 +100,7 @@ def plot_droplets_with_pyvista(plotter: pv.Plotter, map: map_layers.Map):
 
 
 if __name__ == "__main__":
-    map = map_layers.Map(default_params)
+    map = map_layers.Map(test_params)
     plotter = pv.Plotter()
     plot_elevation_with_pyvista(plotter, map)
     plotter.show()
