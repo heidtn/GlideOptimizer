@@ -71,10 +71,11 @@ def create_rectilinear_grid(start, length, spacing, count):
 
 
 def test_sim_seeds():
+    test_params.wind_speed = np.array([0, 0.0, 0.0])
     map = FlatMap(test_params, 500.0, 500.0)
     particles = ParticleManager(test_params)
     sprayer = ConeSprayer(90, chrysopogon_params)
-    vehicle = StationarySprayer(np.array((250.0, 250.0, 1000.0)), sprayer, 10)
+    vehicle = StationarySprayer(np.array((250.0, 250.0, 250.0)), sprayer, 10)
     sim = Simulator(map, particles, test_params, vehicle, timestep=0.05)
     sim.run()
 
@@ -85,8 +86,29 @@ def test_sim_spores():
 
     trajectory = create_rectilinear_grid(np.array([200., 400., 500.]), 400., 200., 8)
     vehicle = LinearDrone(trajectory, 10.0, sprayer)
-    sim = Simulator(map, particles, default_params, vehicle, timestep=0.003)
+    sim = Simulator(map, particles, default_params, vehicle, timestep=0.01)
     sim.run()
+
+def test_sim_stationary_spores():
+    map = FlatMap(test_params, 2000.0, 2000.0)
+    particles = ParticleManager(test_params)
+    sprayer = ConeSprayer(90, generic_amf_params)
+    vehicle = StationarySprayer(np.array((1000.0, 1000.0, 50.0)), sprayer, 10)
+    sim = Simulator(map, particles, test_params, vehicle, timestep=0.01)
+    sim.run()
+
+def test_seeds_wind():
+    test_params.wind_speed = np.array([0, 20.0, 0.])
+
+    map = FlatMap(test_params, 5000.0, 5000.0)
+    particles = ParticleManager(test_params)
+    sprayer = ConeSprayer(90, chrysopogon_params)
+    vehicle = StationarySprayer(np.array((2500.0, 2500.0, 500.0)), sprayer, 10)
+    sim = Simulator(map, particles, test_params, vehicle, visualize=True, timestep=0.05)
+    sim.run()
+    #cep = map.get_droplet_cep(90)
+    #hist = map.get_droplet_histogram()
+    #return cep, hist
         
 if __name__ == "__main__":
-    test_sim_spores()
+    test_seeds_wind()

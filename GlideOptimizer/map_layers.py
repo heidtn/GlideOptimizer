@@ -47,9 +47,12 @@ class FlatMap:
         return 0.
     
     def add_droplet_at(self, x, y):
-        x_idx = int((x / self.x_size) * self.droplet_array.shape[0])
-        y_idx = int((y / self.y_size) * self.droplet_array.shape[1])
-        self.droplet_array[y_idx, x_idx] += 1
+        try:
+            x_idx = int((x / self.x_size) * self.droplet_array.shape[0])
+            y_idx = int((y / self.y_size) * self.droplet_array.shape[1])
+            self.droplet_array[y_idx, x_idx] += 1
+        except IndexError:
+            return None
 
     def clear_droplet_array(self):
         self.droplet_array = 0
@@ -64,6 +67,10 @@ class FlatMap:
         distances = _get_droplet_distances(self, self.params)
         histogram_data = np.histogram(distances, bins)
         return histogram_data
+    
+    def get_droplet_centroid_distance(self):
+        center =  _calculate_droplet_centroid(self, self.params)
+        return np.linalg.norm(center)
 
 
 class Map:
@@ -147,16 +154,23 @@ def get_elevation_data(params: SimParams):
     arr = generate_elevation_array(params)
     return arr
 
-def _get_droplet_distances(map: FlatMap, params: SimParams):
-    drops = map.droplet_array
+from numba import njit
+
+@njit
+def _count_droplets(x_size, y_size, resolution, drops):
     distance_array = []
     for x in range(drops.shape[0]):
         for y in range(drops.shape[1]):
-            x_position = x * params.map_droplet_resolution - map.x_size/2.0
-            y_position = y * params.map_droplet_resolution - map.y_size/2.0
+            x_position = x * resolution - x_size / 2.0
+            y_position = y * resolution - y_size / 2.0
             for i in range(int(drops[x, y])):
                 distance_array.append((x_position, y_position))
-    mean = np.mean(np.array(distance_array))
+    return distance_array
+
+def _get_droplet_distances(map: FlatMap, params: SimParams):
+    drops = map.droplet_array
+    distance_array = _count_droplets(map.x_size, map.y_size, params.map_droplet_resolution, drops)
+    mean = np.mean(np.array(distance_array), axis=0)
     distances = np.linalg.norm(distance_array -  mean, axis=1)
     return distances
 
@@ -175,6 +189,14 @@ def _calculate_droplet_cep(map: FlatMap, params: SimParams, percent):
     """
     distances = _get_droplet_distances(map, params)
     return np.percentile(distances, percent)
+
+def _calculate_droplet_centroid(map: FlatMap, params: SimParams):
+    #TODO(Heidt) This is copied from _get_droplet_distances, unify
+    drops = map.droplet_array
+    distance_array = _count_droplets(map.x_size, map.y_size, params.map_droplet_resolution, drops)
+    mean = np.mean(np.array(distance_array), axis=0)
+    return mean
+    
 
 
 if __name__ == "__main__":

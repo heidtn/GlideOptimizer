@@ -1,6 +1,7 @@
 import numpy as np
 from GlideOptimizer.sim_params import SimParams
 from GlideOptimizer.map_layers import Map
+from numba import njit
 
 """
     droplet models are from the following papers:
@@ -52,33 +53,58 @@ class ParticleManager:
     def step(self, delta_t: float):
         if self.pc.droplet_sizes.shape[0] == 0:
             return
+        #self.step_euler(delta_t)
+        self.step_rk(delta_t)
 
-        # TODO(Heidt) look at the paper that details the brownian motion
-        # TODO(Heidt) add in droplet evaporation term
-        # TODO(Heidt) consider moving to leapfrog integration
-        # TODO(Heidt) the paper implies we don't use absolute value of particle, need to confirm
-        # TODO(Heidt) divide by 0 when velocity diff is 0
+    def _f_x(self, droplet_velocities, active):
+        return active * droplet_velocities
 
-        num_droplets = len(self.pc.droplet_positions)
-        velocity_fluctuation = np.random.normal(0, scale=np.sqrt(delta_t), size=(num_droplets, 3))
-        R_L = np.exp(-delta_t / T_l)
-
-        self.pc.droplet_noise = self.pc.droplet_noise * R_L + self.wind_deviation / np.sqrt(delta_t) * np.sqrt(1 - R_L**2.0) * velocity_fluctuation 
-        fluid_vel = self.wind_speed + self.pc.droplet_noise
-        velocity_diff = fluid_vel - self.pc.droplet_velocities
+    def _f_v(self, fluid_vel, droplet_velocities, droplet_sizes):
+        velocity_diff = fluid_vel - droplet_velocities
 
         # Magnitude of relative velocity for each particle
         speed = np.linalg.norm(velocity_diff, axis=1, keepdims=True)
 
-        Re = (AIR_DENSITY * self.pc.droplet_sizes * speed) / AIR_VISCOSITY
+        Re = (AIR_DENSITY * droplet_sizes * speed) / AIR_VISCOSITY
         Cd = np.where((Re < 1000), (24 * (1 + 0.15 * Re**0.687)) / Re, 0.44) 
 
         # Drag acceleration
-        drag_accel = 0.75 * Cd * AIR_DENSITY * speed * velocity_diff / (DROPLET_DENSITY * self.pc.droplet_sizes)
+        drag_accel = 0.75 * Cd * AIR_DENSITY * speed * velocity_diff / (DROPLET_DENSITY * droplet_sizes)
         grav_accel = np.array([0, 0, -9.8]) * (1 - AIR_DENSITY/DROPLET_DENSITY)
+        return drag_accel + grav_accel
+    
+    def _fluid_vel(self, delta_t):
+        num_droplets = len(self.pc.droplet_positions)
+        velocity_fluctuation = np.random.normal(0, scale=np.sqrt(delta_t), size=(num_droplets, 3))
+        R_L = np.exp(-delta_t / T_l)
+        self.pc.droplet_noise = self.pc.droplet_noise * R_L + self.wind_deviation / np.sqrt(delta_t) * np.sqrt(1 - R_L**2.0) * velocity_fluctuation 
+        fluid_vel = self.wind_speed + self.pc.droplet_noise
+        return fluid_vel
 
-        self.pc.droplet_velocities += (grav_accel * delta_t) + (drag_accel * delta_t)
-        self.pc.droplet_positions += self.pc.droplet_active * self.pc.droplet_velocities * delta_t
+    def step_euler(self, delta_t):
+        # TODO(Heidt) look at the paper that details the brownian motion
+        # TODO(Heidt) add in droplet evaporation term
+        # TODO(Heidt) divide by 0 when velocity diff is 0
+        fluid_vel = self._fluid_vel(delta_t)
+        dv = self._f_v(fluid_vel, self.pc.droplet_velocities, self.pc.droplet_sizes)
+        dx = self._f_x(self.pc.droplet_velocities, self.pc.droplet_active)
+
+        self.pc.droplet_velocities += dv * delta_t
+        self.pc.droplet_positions += dx * delta_t
+
+    def step_rk(self, delta_t):
+        h = delta_t # to match RK nomenclature
+        fluid_vel = self._fluid_vel(h)
+        k1_x = h * self._f_x(self.pc.droplet_velocities, self.pc.droplet_active)
+        k1_v = h * self._f_v(fluid_vel, self.pc.droplet_velocities, self.pc.droplet_sizes)
+        k2_x = h * self._f_x(self.pc.droplet_velocities + 0.5*k1_v, self.pc.droplet_active)
+        k2_v = h * self._f_v(fluid_vel, self.pc.droplet_velocities + 0.5*k1_v, self.pc.droplet_sizes)
+        k3_x = h * self._f_x(self.pc.droplet_velocities + 0.5*k2_v, self.pc.droplet_active)
+        k3_v = h * self._f_v(fluid_vel, self.pc.droplet_velocities + 0.5*k2_v, self.pc.droplet_sizes)
+        k4_x = h * self._f_x(self.pc.droplet_velocities + k3_v, self.pc.droplet_active)
+        k4_v = h * self._f_v(fluid_vel, self.pc.droplet_velocities + k3_v, self.pc.droplet_sizes)
+        self.pc.droplet_velocities += (1.0/6.0) * (k1_v + 2*k2_v + 2*k3_v + k4_v)
+        self.pc.droplet_positions += (1.0/6.0) * (k1_x + 2*k2_x + 2*k3_x + k4_x)
 
         
     def check_droplet_collision(self, map: Map):
