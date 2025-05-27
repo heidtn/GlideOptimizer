@@ -21,6 +21,40 @@ class SprayerParticleParams:
     particle_emmission_variance: int  # particles/second
     particle_minimum_size: float # meters
 
+
+# see https://pure.knaw.nl/ws/portalfiles/portal/478890/Rietkerk_ea_3482.pdf for 
+# variable reference
+@dataclass
+class PlantGrowthParams:
+    c: float # conversion of water uptake by plants to plant growth g/(mm m^2)
+    gmax: float # max specific water update mm/(g m^2 day)
+    k_1: float # half-saturation constant of specific plant growth and water udpate mm
+    d: float # specific loss of plant density due to mortality 1/day
+    D_p: float # plant dispersal m^2/day
+    alpha: float # max infiltration rate 1/day
+    k_2: float # saturation constant of water infiltration
+    W_0: float # water infiltration rate in the absence of plants
+    r_w: float # specific soil water loss due to drainage 1/day
+    D_w: float # diffusion coefficient for soil water m^2/day
+    R: float # rainfall mm/day
+    D_0: float # diffusion coefficient for surface water m^2/day
+
+generic_plant_params = PlantGrowthParams(
+    c=10,
+    gmax=0.05,
+    k_1=5,
+    D_p=0.1,
+    alpha=0.2,
+    k_2=5,
+    W_0=0.2,
+    r_w=0.2,
+    D_w=0.1,
+    D_0=100,
+    d=0.3,
+    R=0.25
+)
+
+
 generic_amf_params = SprayerParticleParams(
     320e-6, 
     130e-6, 
