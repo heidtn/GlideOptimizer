@@ -9,7 +9,7 @@ from numba import njit
 from numba import cuda, float32
 import numpy as np
 
-np.seterr(all='raise')
+#np.seterr(all='raise')
 
 from GlideOptimizer.sim_params import PlantGrowthParams, generic_plant_params
 
@@ -42,7 +42,6 @@ class GrowthGrid:
 
     def step(self, delta_t):
         p = self.params
-        stencil = np.array([[0, 1, 0],[1, -4, 1], [0, 1, 0]])
 
         # dP/dt calcs
         water_uptake = p.gmax * (self.W / (self.W + p.k_1))
@@ -75,9 +74,9 @@ class GrowthGrid:
         params = self.params
         res = self.res
         # Copy to device
-        P_d = cuda.to_device(self.P.astype(np.float32))
-        W_d = cuda.to_device(self.W.astype(np.float32))
-        O_d = cuda.to_device(self.O.astype(np.float32))
+        P_d = cuda.to_device(self.P.astype(np.float64))
+        W_d = cuda.to_device(self.W.astype(np.float64))
+        O_d = cuda.to_device(self.O.astype(np.float64))
 
         nx, ny = self.P.shape
         P_out_d = cuda.device_array_like(P_d)
@@ -122,21 +121,34 @@ class GrowthGrid:
 
 import time
 def main():
-    grid = GrowthGrid(400, 400, generic_plant_params, resolution=2)
+    grid = GrowthGrid(200, 200, generic_plant_params, resolution=2.0)
     grid.random_seed()
-    grid.run_step_gpu(0.0005, 1000000)
-    #images = []
-    #step = 1/2000.0
-    #im = None
-    #for i in tqdm(range(int(1/step * 3000))):
-    #    grid.step(step)
-    #    if i % 5000 == 0:
-    #        dat = grid.P
-    #        im = Image.fromarray((dat - dat.min()) * 255/(dat.max() - dat.min()))
-    #        images.append(im)
-    #
-    #images[0].save('plant_growth.gif', save_all=True, append_images=images[1:], duration=30)
-    #im = im.convert("RGB")
+    images = []
+    step = 0.001
+    im = None
+    plt.ion()  # Turn interactive mode on
+    fig, ax = plt.subplots()
+    imax = ax.imshow(grid.P, cmap='viridis', interpolation='nearest')
+    plt.colorbar(imax, ax=ax)
+    plt.show()
+
+    for i in tqdm(range(int(1/step * 3000 / 5000))):
+        grid.run_step_gpu(step, 5000)
+        dat = grid.P
+        im = Image.fromarray((dat - dat.min()) * 255/(dat.max() - dat.min()))
+        arr = grid.P
+        images.append(im)
+        imax.set_data(arr)
+        imax.set_clim(vmin=arr.min(), vmax=arr.max())  # Optional: autoscale color
+        plt.title(f'Timestep {step}')
+        plt.pause(0.01)  # Tiny pause to refresh plot
+
+    plt.imshow(grid.P)
+    plt.colorbar()
+    plt.show() 
+
+    images[0].save('plant_growth.gif', save_all=True, append_images=images[1:], duration=30)
+    im = im.convert("RGB")
     dat = grid.P
     im = Image.fromarray((dat - dat.min()) * 255/(dat.max() - dat.min()))
     im = im.convert("RGB")
@@ -191,6 +203,7 @@ def update_rietkerk(
         P_out[i, j] = P_new
         W_out[i, j] = W_new
         O_out[i, j] = O_new
+
             
 
 
