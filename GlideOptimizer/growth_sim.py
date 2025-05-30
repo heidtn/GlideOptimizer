@@ -35,7 +35,7 @@ class GrowthGrid:
         for i in range(self.P.shape[0]):
             for j in range(self.P.shape[1]):
                 if np.random.randint(0, 100) == 0:
-                    self.P[i, j] = np.random.rand()
+                    self.P[i, j] = np.random.rand()*20.0
 
         self.W *= self.params.R/self.params.r_w
         self.O *= self.params.R/(self.params.alpha * self.params.W_0)
@@ -121,7 +121,7 @@ class GrowthGrid:
 
 import time
 def main():
-    grid = GrowthGrid(200, 200, generic_plant_params, resolution=2.0)
+    grid = GrowthGrid(800, 800, generic_plant_params, resolution=2.0)
     grid.random_seed()
     images = []
     step = 0.001

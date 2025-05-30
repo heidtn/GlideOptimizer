@@ -51,7 +51,7 @@ generic_plant_params = PlantGrowthParams(
     D_w=0.1,
     D_0=100,
     # d and R are the key parameters and the sim is very sensitive to them
-    d=0.23,
+    d=0.25,
     R=0.9
 )
 
