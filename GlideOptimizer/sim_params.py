@@ -38,6 +38,7 @@ class PlantGrowthParams:
     D_w: float # diffusion coefficient for soil water m^2/day
     R: float # rainfall mm/day
     D_0: float # diffusion coefficient for surface water m^2/day
+    v: float # velocity flow term for surface water
 
 generic_plant_params = PlantGrowthParams(
     c=10,
@@ -50,9 +51,10 @@ generic_plant_params = PlantGrowthParams(
     r_w=0.2,
     D_w=0.1,
     D_0=100,
+    v=10.0,
     # d and R are the key parameters and the sim is very sensitive to them
     d=0.25,
-    R=0.9
+    R=1.0,
 )
 
 
