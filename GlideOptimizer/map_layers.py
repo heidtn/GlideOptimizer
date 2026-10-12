@@ -154,6 +154,31 @@ def get_elevation_data(params: SimParams):
     arr = generate_elevation_array(params)
     return arr
 
+
+def get_satellite_image(params: SimParams, zoom="auto"):
+    """
+    Fetch a satellite basemap image covering the params lat/lon bounding box.
+
+    Returns:
+      img: (H, W, 4) RGBA array in EPSG:4326 (lon/lat)
+      extent: (lon_min, lon_max, lat_min, lat_max) of the returned image
+              (slightly larger than the requested bbox since tiles snap to
+              a fixed grid)
+    """
+    import contextily as cx
+
+    img, mercator_extent = cx.bounds2img(
+        params.lon_min,
+        params.lat_min,
+        params.lon_max,
+        params.lat_max,
+        ll=True,
+        source=cx.providers.Esri.WorldImagery,
+        zoom=zoom,
+    )
+    img, extent = cx.warp_tiles(img, mercator_extent, t_crs="EPSG:4326")
+    return img, extent
+
 from numba import njit
 
 @njit
