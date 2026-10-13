@@ -139,7 +139,7 @@ def generate_elevation_array(
     bounds = (params.lon_min, params.lat_min, params.lon_max, params.lat_max)
     # Using SRTM1 which typically provides ~30m resolution data.
     resolution = 30.0
-    elevation.clip(bounds=bounds, output=dem_path, product="SRTM3")
+    elevation.clip(bounds=bounds, output=dem_path, product="SRTM1")
     with rasterio.open(dem_path) as src:
         # Determine a target CRS using UTM based on the center of the bounding box.
         dem_data = src.read(1).astype("float64")
@@ -155,15 +155,41 @@ def get_elevation_data(params: SimParams):
     return arr
 
 
-def get_satellite_image(params: SimParams, zoom="auto"):
+def _crop_to_bounds(img: np.ndarray, extent, bounds):
+    """
+    Crop img (H, W, ...) whose pixels span `extent` = (lon_min, lon_max,
+    lat_min, lat_max) down to the smaller `bounds` = (lon_min, lon_max,
+    lat_min, lat_max). Assumes img pixels are evenly spaced in lon/lat,
+    row 0 = north edge (lat_max), as produced by contextily.warp_tiles.
+    """
+    ext_lon_min, ext_lon_max, ext_lat_min, ext_lat_max = extent
+    b_lon_min, b_lon_max, b_lat_min, b_lat_max = bounds
+    h, w = img.shape[0], img.shape[1]
+
+    col_start = int(round((b_lon_min - ext_lon_min) / (ext_lon_max - ext_lon_min) * w))
+    col_end = int(round((b_lon_max - ext_lon_min) / (ext_lon_max - ext_lon_min) * w))
+    # row 0 is the north edge (ext_lat_max), so rows increase as latitude decreases
+    row_start = int(round((ext_lat_max - b_lat_max) / (ext_lat_max - ext_lat_min) * h))
+    row_end = int(round((ext_lat_max - b_lat_min) / (ext_lat_max - ext_lat_min) * h))
+
+    col_start, col_end = max(0, col_start), min(w, col_end)
+    row_start, row_end = max(0, row_start), min(h, row_end)
+
+    return img[row_start:row_end, col_start:col_end]
+
+
+def get_satellite_image(params: SimParams, zoom="auto", crop=True):
     """
     Fetch a satellite basemap image covering the params lat/lon bounding box.
+
+    Tile servers only serve whole tiles snapped to a fixed grid, so the
+    raw fetch almost always covers more area than the requested bbox. By
+    default (crop=True) the image is cropped down to exactly params'
+    bounds so it lines up pixel-for-pixel with the growth sim's extent.
 
     Returns:
       img: (H, W, 4) RGBA array in EPSG:4326 (lon/lat)
       extent: (lon_min, lon_max, lat_min, lat_max) of the returned image
-              (slightly larger than the requested bbox since tiles snap to
-              a fixed grid)
     """
     import contextily as cx
 
@@ -177,6 +203,12 @@ def get_satellite_image(params: SimParams, zoom="auto"):
         zoom=zoom,
     )
     img, extent = cx.warp_tiles(img, mercator_extent, t_crs="EPSG:4326")
+
+    if crop:
+        bounds = (params.lon_min, params.lon_max, params.lat_min, params.lat_max)
+        img = _crop_to_bounds(img, extent, bounds)
+        extent = bounds
+
     return img, extent
 
 from numba import njit

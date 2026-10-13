@@ -109,15 +109,20 @@ class GrowthGrid:
         self.W = np.clip(self.W, 0, None)
         self.O = np.clip(self.O, 0, None)
 
-    def run_step_gpu(self, delta_t, n_steps):
+    def run_step_gpu(self, delta_t, n_steps, dtype=np.float32):
         params = self.params
         res = self.res
-        # Copy to device
-        P_d = cuda.to_device(self.P.astype(np.float64))
-        W_d = cuda.to_device(self.W.astype(np.float64))
-        O_d = cuda.to_device(self.O.astype(np.float64))
-        vx_d = cuda.to_device(self.v_x.astype(np.float64))
-        vy_d = cuda.to_device(self.v_y.astype(np.float64))
+        # Copy to device. dtype defaults to float32: this is a forward-Euler
+        # reaction-diffusion system with values that stay in a small bounded
+        # range, so float64 precision is unnecessary, and float32 roughly
+        # halves memory traffic (the dominant cost for this kernel) while
+        # also running at full speed on consumer GPUs, which throttle
+        # float64 throughput heavily versus float32.
+        P_d = cuda.to_device(self.P.astype(dtype))
+        W_d = cuda.to_device(self.W.astype(dtype))
+        O_d = cuda.to_device(self.O.astype(dtype))
+        vx_d = cuda.to_device(self.v_x.astype(dtype))
+        vy_d = cuda.to_device(self.v_y.astype(dtype))
 
         nx, ny = self.P.shape
         P_out_d = cuda.device_array_like(P_d)
@@ -129,19 +134,23 @@ class GrowthGrid:
         blockspergrid_y = (ny + threadsperblock[1] - 1) // threadsperblock[1]
         blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-        # Unpack parameters
-        c = params.c
-        gmax = params.gmax
-        k_1 = params.k_1
-        d = params.d
-        D_p = params.D_p
-        alpha = params.alpha
-        k_2 = params.k_2
-        W_0 = params.W_0
-        r_w = params.r_w
-        D_w = params.D_w
-        D_0 = params.D_0
-        R = params.R
+        # Unpack parameters. Cast to the same dtype as the arrays: mixing a
+        # float32 array with a float64 Python-float scalar would silently
+        # promote every expression in the kernel back to float64.
+        c = dtype(params.c)
+        gmax = dtype(params.gmax)
+        k_1 = dtype(params.k_1)
+        d = dtype(params.d)
+        D_p = dtype(params.D_p)
+        alpha = dtype(params.alpha)
+        k_2 = dtype(params.k_2)
+        W_0 = dtype(params.W_0)
+        r_w = dtype(params.r_w)
+        D_w = dtype(params.D_w)
+        D_0 = dtype(params.D_0)
+        R = dtype(params.R)
+        res = dtype(res)
+        delta_t = dtype(delta_t)
 
         # Main iteration loop
         for step in range(n_steps):
@@ -252,60 +261,51 @@ def update_rietkerk(
     i, j = cuda.grid(2)
     nx, ny = P.shape
 
-    # Helper for Laplacian with reflecting boundary conditions
-    def laplace(U, i, j):
+    if i < nx and j < ny:
         im1 = i - 1 if i > 0 else 0  # reflect at 0
         ip1 = i + 1 if i < nx - 1 else nx - 1  # reflect at nx-1
         jm1 = j - 1 if j > 0 else 0  # reflect at 0
         jp1 = j + 1 if j < ny - 1 else ny - 1  # reflect at ny-1
 
-        return U[im1, j] + U[ip1, j] + U[i, jm1] + U[i, jp1] - 4.0 * U[i, j]
+        # cache each field's value at this cell once instead of re-reading
+        # it from global memory on every use
+        Pc = P[i, j]
+        Wc = W[i, j]
+        Oc = O[i, j]
 
-    if i < nx and j < ny:
+        inv_res2 = 1.0 / (res * res)
+        P_lap = (P[im1, j] + P[ip1, j] + P[i, jm1] + P[i, jp1] - 4.0 * Pc) * inv_res2
+        W_lap = (W[im1, j] + W[ip1, j] + W[i, jm1] + W[i, jp1] - 4.0 * Wc) * inv_res2
+        O_lap = (O[im1, j] + O[ip1, j] + O[i, jm1] + O[i, jp1] - 4.0 * Oc) * inv_res2
+
         # dP/dt
-        growth_term = c * gmax * (W[i, j] / (W[i, j] + k_1)) * P[i, j]
-        death_term = d * P[i, j]
-        plant_dispersal = D_p * laplace(P, i, j) / (res * res)
-        dP = growth_term - death_term + plant_dispersal
+        water_uptake = gmax * (Wc / (Wc + k_1))  # reused below instead of recomputed
+        growth_term = c * water_uptake * Pc
+        death_term = d * Pc
+        dP = growth_term - death_term + D_p * P_lap
 
         # dW/dt
-        infiltration = alpha * O[i, j] * ((P[i, j] + k_2 * W_0) / (P[i, j] + k_2))
-        water_intake = gmax * (W[i, j] / (W[i, j] + k_1)) * P[i, j]
-        water_loss = r_w * W[i, j]
-        water_diffusion = D_w * laplace(W, i, j) / (res * res)
-        dW = infiltration - water_intake - water_loss + water_diffusion
+        infiltration = alpha * Oc * ((Pc + k_2 * W_0) / (Pc + k_2))
+        water_intake = water_uptake * Pc
+        water_loss = r_w * Wc
+        dW = infiltration - water_intake - water_loss + D_w * W_lap
 
-        # dO/dt
-        # Calculate fluxes at each cell
-        #F_x = v_x * O
-        #F_y = v_y * O
-
-        im1 = i-1 if i > 0 else 0
-        ip1 = i+1 if i < nx-1 else nx-1
-        jm1 = j-1 if j > 0 else 0
-        jp1 = j+1 if j < ny-1 else ny-1
-
-        # Fluxes at each face
+        # dO/dt: fluxes at each face, central difference for divergence
         F_x_ip1 = v_x[ip1, j] * O[ip1, j]
         F_x_im1 = v_x[im1, j] * O[im1, j]
         F_y_jp1 = v_y[i, jp1] * O[i, jp1]
         F_y_jm1 = v_y[i, jm1] * O[i, jm1]
 
-        # Central difference for divergence
-        dF_x_dx = (F_x_ip1 - F_x_im1) / (2 * res)
-        dF_y_dy = (F_y_jp1 - F_y_jm1) / (2 * res)
+        inv_2res = 1.0 / (2.0 * res)
+        dF_x_dx = (F_x_ip1 - F_x_im1) * inv_2res
+        dF_y_dy = (F_y_jp1 - F_y_jm1) * inv_2res
         surface_flux = dF_x_dx + dF_y_dy
-        surface_diffusion = D_0 * laplace(O, i, j) / (res * res)
-        dO = R - infiltration + surface_flux + surface_diffusion
+        dO = R - infiltration + surface_flux + D_0 * O_lap
 
         # Euler update and clipping
-        P_new = max(P[i, j] + dP * delta_t, 0.0)
-        W_new = max(W[i, j] + dW * delta_t, 0.0)
-        O_new = max(O[i, j] + dO * delta_t, 0.0)
-
-        P_out[i, j] = P_new
-        W_out[i, j] = W_new
-        O_out[i, j] = O_new
+        P_out[i, j] = max(Pc + dP * delta_t, 0.0)
+        W_out[i, j] = max(Wc + dW * delta_t, 0.0)
+        O_out[i, j] = max(Oc + dO * delta_t, 0.0)
 
 
 if __name__ == "__main__":
